@@ -1,0 +1,82 @@
+{% comment %}
+  Shopify App Proxy - Product Data Loader
+  
+  Installation:
+  1. Create a new snippet: product-proxy-data.liquid
+  2. Include it in your product template: {% render 'product-proxy-data' %}
+  3. Make sure your app proxy is configured in Shopify
+{% endcomment %}
+
+<script>
+(function() {
+  // Configuration
+  const PROXY_PATH = '/apps/products'; // Match your app proxy subpath
+  const PRODUCT_ID = '{{ product.id }}';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  
+  // Build API URL (uses YOUR Shopify domain via proxy)
+  const API_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}`;
+  
+  console.log('🔄 Loading product data from proxy...');
+  
+  // Fetch product data
+  fetch(`${API_URL}/product/${PRODUCT_ID}`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('✅ Product data loaded:', data);
+      
+      // Update product title
+      const titleEl = document.querySelector('.product__title, h1.product-title, [data-product-title]');
+      if (titleEl && data.title) {
+        titleEl.textContent = data.title;
+      }
+      
+      // Update product description
+      const descEl = document.querySelector('.product__description, .product-description, [data-product-description]');
+      if (descEl && data.description) {
+        descEl.innerHTML = data.description;
+      }
+      
+      // Update price
+      const priceEl = document.querySelector('.product__price, .price, [data-product-price]');
+      if (priceEl && data.price) {
+        priceEl.textContent = `$${data.price}`;
+      }
+      
+      // Update images (if provided)
+      if (data.images && data.images.length > 0) {
+        const imgEl = document.querySelector('.product__image img, .product-image img');
+        if (imgEl) {
+          imgEl.src = data.images[0];
+        }
+      }
+      
+      // Dispatch custom event for advanced integrations
+      document.dispatchEvent(new CustomEvent('shopify:proxy:loaded', { 
+        detail: data 
+      }));
+    })
+    .catch(error => {
+      console.error('❌ Failed to load product data:', error);
+      // Fallback: use default Shopify data
+    });
+})();
+</script>
+
+<style>
+  /* Optional: Add loading state */
+  .product__title,
+  .product__description {
+    transition: opacity 0.3s ease;
+  }
+  
+  .product-loading .product__title,
+  .product-loading .product__description {
+    opacity: 0.5;
+  }
+</style>

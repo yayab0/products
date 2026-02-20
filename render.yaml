@@ -1,0 +1,5 @@
+buildCommand = "npm install"
+startCommand = "npm start"
+
+[env]
+NODE_VERSION = "18"
