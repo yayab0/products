@@ -48,7 +48,12 @@ function verifyShopifyProxy(req) {
 app.use('/proxy', (req, res, next) => {
   console.log('📥 Proxy request:', req.path);
   
-  // Skip verification in dev mode
+  // Skip verification for health check
+  if (req.path === '/health') {
+    return next();
+  }
+  
+  // Skip verification in dev mode or if no secret set
   if (process.env.SHOPIFY_APP_SECRET && !verifyShopifyProxy(req)) {
     console.log('❌ Invalid signature');
     return res.status(401).json({ error: 'Unauthorized' });
