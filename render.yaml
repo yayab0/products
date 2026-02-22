@@ -1,5 +1,5 @@
 buildCommand = "npm install"
-startCommand = "npm start"
+startCommand = "node index.js"
 
 [env]
 NODE_VERSION = "18"
