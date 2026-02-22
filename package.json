@@ -2,9 +2,9 @@
   "name": "shopify-app-proxy",
   "version": "1.0.0",
   "description": "Shopify App Proxy server for product management",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "compression": "^1.8.1",
