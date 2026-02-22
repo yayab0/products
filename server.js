@@ -163,7 +163,6 @@ app.post('/admin/product', (req, res) => {
 // ===== GOOGLE SHEETS SYNC =====
 // Sheet must be published as CSV (File > Share > Publish to web > CSV)
 // Columns: shopify_id | title | description | price | category | images | variants
-// images = comma-separated URLs, variants = JSON string or empty
 app.post('/admin/sync-sheet', async (req, res) => {
   const { sheet_url } = req.body;
   const url = sheet_url || process.env.GOOGLE_SHEET_CSV_URL;
@@ -172,63 +171,8 @@ app.post('/admin/sync-sheet', async (req, res) => {
     return res.status(400).json({ error: 'sheet_url required in body or set GOOGLE_SHEET_CSV_URL env var' });
   }
 
-  try {
-    const csvText = await fetchURL(url);
-    const rows = parseCSV(csvText);
-
-    if (rows.length < 2) {
-      return res.status(400).json({ error: 'Sheet has no data rows' });
-    }
-
-    const headers = rows[0].map(h => h.trim().toLowerCase());
-    const synced = [];
-    const errors = [];
-
-    rows.slice(1).forEach((row, i) => {
-      try {
-        const get = (col) => {
-          const idx = headers.indexOf(col);
-          return idx >= 0 ? (row[idx] || '').trim() : '';
-        };
-
-        const shopify_id = get('shopify_id');
-        if (!shopify_id) return; // skip empty rows
-
-        // parse images: comma-separated URLs
-        const imagesRaw = get('images');
-        const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-        // parse variants: JSON string or empty
-        let variants = [];
-        const variantsRaw = get('variants');
-        if (variantsRaw) {
-          try { variants = JSON.parse(variantsRaw); } catch (_) { variants = []; }
-        }
-
-        products[shopify_id] = {
-          id: shopify_id,
-          shopify_id,
-          title: get('title'),
-          description: get('description'),
-          price: get('price'),
-          category: get('category'),
-          images,
-          variants,
-          synced_at: new Date().toISOString()
-        };
-
-        synced.push(shopify_id);
-      } catch (err) {
-        errors.push({ row: i + 2, error: err.message });
-      }
-    });
-
-    console.log(`✅ Sheet sync: ${synced.length} products synced`);
-    res.json({ success: true, synced: synced.length, products: synced, errors });
-  } catch (err) {
-    console.error('❌ Sheet sync failed:', err.message);
-    res.status(500).json({ error: 'Failed to fetch or parse sheet', detail: err.message });
-  }
+  await syncSheet(url);
+  res.json({ success: true, products_count: Object.keys(products).length });
 });
 
 // Fetch a URL and return body as text (no extra deps)
@@ -286,4 +230,62 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📦 Products loaded: ${Object.keys(products).length}`);
   console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  // Auto-sync Google Sheet on startup + every 5 minutes
+  const SHEET_URL = process.env.GOOGLE_SHEET_CSV_URL;
+  if (SHEET_URL) {
+    console.log('📊 Google Sheet auto-sync enabled');
+    syncSheet(SHEET_URL); // run immediately on boot
+    setInterval(() => syncSheet(SHEET_URL), 5 * 60 * 1000); // then every 5 min
+  } else {
+    console.log('⚠️  No GOOGLE_SHEET_CSV_URL set — auto-sync disabled');
+  }
 });
+
+// Core sync logic (shared by auto-sync + manual /admin/sync-sheet)
+async function syncSheet(url) {
+  try {
+    const csvText = await fetchURL(url);
+    const rows = parseCSV(csvText);
+    if (rows.length < 2) return;
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    let count = 0;
+
+    rows.slice(1).forEach((row) => {
+      const get = (col) => {
+        const idx = headers.indexOf(col);
+        return idx >= 0 ? (row[idx] || '').trim() : '';
+      };
+
+      const shopify_id = get('shopify_id');
+      if (!shopify_id) return;
+
+      const imagesRaw = get('images');
+      const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      let variants = [];
+      const variantsRaw = get('variants');
+      if (variantsRaw) {
+        try { variants = JSON.parse(variantsRaw); } catch (_) {}
+      }
+
+      products[shopify_id] = {
+        id: shopify_id,
+        shopify_id,
+        title: get('title'),
+        description: get('description'),
+        price: get('price'),
+        category: get('category'),
+        images,
+        variants,
+        synced_at: new Date().toISOString()
+      };
+      count++;
+    });
+
+    console.log(`✅ Sheet sync: ${count} products updated at ${new Date().toLocaleTimeString()}`);
+  } catch (err) {
+    console.error('❌ Sheet sync failed:', err.message);
+  }
+}
