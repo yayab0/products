@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const cors = require('cors');
+const https = require('https');
 require('dotenv').config();
 
 const app = express();
@@ -18,6 +19,7 @@ const products = {
     title: 'Premium Product',
     description: 'High-quality product with exclusive features',
     price: '99.99',
+    category: 'General',
     images: ['https://via.placeholder.com/800'],
     variants: [
       { id: 'v1', title: 'Small', price: '99.99', available: true },
@@ -86,7 +88,7 @@ app.get('/proxy/products', (req, res) => {
 
 // Add or update product
 app.post('/proxy/product', (req, res) => {
-  const { shopify_id, title, description, price, images, variants } = req.body;
+  const { shopify_id, title, description, price, images, variants, category } = req.body;
   
   if (!shopify_id) {
     return res.status(400).json({ error: 'shopify_id required' });
@@ -98,6 +100,7 @@ app.post('/proxy/product', (req, res) => {
     title,
     description,
     price,
+    category: category || '',
     images: images || [],
     variants: variants || [],
     updated_at: new Date().toISOString()
@@ -136,7 +139,7 @@ app.get('/admin/products', (req, res) => {
 
 // Admin: Add product
 app.post('/admin/product', (req, res) => {
-  const { shopify_id, title, description, price, images, variants } = req.body;
+  const { shopify_id, title, description, price, images, variants, category } = req.body;
   
   if (!shopify_id) {
     return res.status(400).json({ error: 'shopify_id required' });
@@ -148,6 +151,7 @@ app.post('/admin/product', (req, res) => {
     title,
     description,
     price,
+    category: category || '',
     images: images || [],
     variants: variants || [],
     created_at: new Date().toISOString()
@@ -155,6 +159,114 @@ app.post('/admin/product', (req, res) => {
   
   res.json({ success: true, product: products[shopify_id] });
 });
+
+// ===== GOOGLE SHEETS SYNC =====
+// Sheet must be published as CSV (File > Share > Publish to web > CSV)
+// Columns: shopify_id | title | description | price | category | images | variants
+// images = comma-separated URLs, variants = JSON string or empty
+app.post('/admin/sync-sheet', async (req, res) => {
+  const { sheet_url } = req.body;
+  const url = sheet_url || process.env.GOOGLE_SHEET_CSV_URL;
+
+  if (!url) {
+    return res.status(400).json({ error: 'sheet_url required in body or set GOOGLE_SHEET_CSV_URL env var' });
+  }
+
+  try {
+    const csvText = await fetchURL(url);
+    const rows = parseCSV(csvText);
+
+    if (rows.length < 2) {
+      return res.status(400).json({ error: 'Sheet has no data rows' });
+    }
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const synced = [];
+    const errors = [];
+
+    rows.slice(1).forEach((row, i) => {
+      try {
+        const get = (col) => {
+          const idx = headers.indexOf(col);
+          return idx >= 0 ? (row[idx] || '').trim() : '';
+        };
+
+        const shopify_id = get('shopify_id');
+        if (!shopify_id) return; // skip empty rows
+
+        // parse images: comma-separated URLs
+        const imagesRaw = get('images');
+        const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+        // parse variants: JSON string or empty
+        let variants = [];
+        const variantsRaw = get('variants');
+        if (variantsRaw) {
+          try { variants = JSON.parse(variantsRaw); } catch (_) { variants = []; }
+        }
+
+        products[shopify_id] = {
+          id: shopify_id,
+          shopify_id,
+          title: get('title'),
+          description: get('description'),
+          price: get('price'),
+          category: get('category'),
+          images,
+          variants,
+          synced_at: new Date().toISOString()
+        };
+
+        synced.push(shopify_id);
+      } catch (err) {
+        errors.push({ row: i + 2, error: err.message });
+      }
+    });
+
+    console.log(`✅ Sheet sync: ${synced.length} products synced`);
+    res.json({ success: true, synced: synced.length, products: synced, errors });
+  } catch (err) {
+    console.error('❌ Sheet sync failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch or parse sheet', detail: err.message });
+  }
+});
+
+// Fetch a URL and return body as text (no extra deps)
+function fetchURL(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      // follow one redirect (Google Sheets does this)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchURL(res.headers.location).then(resolve).catch(reject);
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// Minimal CSV parser (handles quoted fields with commas)
+function parseCSV(text) {
+  return text.trim().split('\n').map(line => {
+    const row = [];
+    let inQuote = false;
+    let field = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuote = !inQuote;
+      } else if (ch === ',' && !inQuote) {
+        row.push(field);
+        field = '';
+      } else {
+        field += ch;
+      }
+    }
+    row.push(field);
+    return row;
+  });
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
