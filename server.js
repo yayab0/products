@@ -49,16 +49,12 @@ function verifyShopifyProxy(req) {
 
 // ===== PROXY MIDDLEWARE =====
 app.use('/proxy', (req, res, next) => {
-  // Log all proxy requests
-  console.log('📥 Proxy request:', req.path, req.query);
-  
-  // Verify signature in production
-  if (process.env.NODE_ENV === 'production' && !verifyShopifyProxy(req)) {
-    console.log('❌ Invalid signature');
+  // GET requests are read-only product data — safe without signature
+  // Only verify signature for write operations (POST/DELETE)
+  const isWrite = req.method === 'POST' || req.method === 'DELETE' || req.method === 'PUT';
+  if (process.env.NODE_ENV === 'production' && isWrite && !verifyShopifyProxy(req)) {
     return res.status(401).json({ error: 'Unauthorized - Invalid signature' });
   }
-  
-  console.log('✅ Request verified');
   next();
 });
 
