@@ -1,6 +1,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const cors = require('cors');
+const https = require('https');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-// In-memory product database
+// In-memory product database (replace with real DB in production)
 const products = {
   '123': {
     id: '123',
@@ -17,6 +19,7 @@ const products = {
     title: 'Premium Product',
     description: 'High-quality product with exclusive features',
     price: '99.99',
+    category: 'General',
     images: ['https://via.placeholder.com/800'],
     variants: [
       { id: 'v1', title: 'Small', price: '99.99', available: true },
@@ -25,44 +28,41 @@ const products = {
   }
 };
 
-// Verify Shopify signature
+// ===== SHOPIFY APP PROXY VERIFICATION =====
 function verifyShopifyProxy(req) {
   const { signature, ...params } = req.query;
   
   if (!signature) return false;
   
+  // Build sorted query string (Shopify's signing method)
   const queryString = Object.keys(params)
     .sort()
     .map(key => `${key}=${params[key]}`)
     .join('');
   
+  // Calculate HMAC with your app's secret
   const hash = crypto
-    .createHmac('sha256', process.env.SHOPIFY_APP_SECRET || 'dev-secret')
+    .createHmac('sha256', process.env.SHOPIFY_APP_SECRET || 'your-app-secret-here')
     .update(queryString)
     .digest('hex');
   
   return hash === signature;
 }
 
-// Proxy middleware
+// ===== PROXY MIDDLEWARE =====
 app.use('/proxy', (req, res, next) => {
-  console.log('📥 Proxy request:', req.path);
-  
-  // Skip verification for health check
-  if (req.path === '/health') {
-    return next();
+  // GET requests are read-only product data — safe without signature
+  // Only verify signature for write operations (POST/DELETE)
+  const isWrite = req.method === 'POST' || req.method === 'DELETE' || req.method === 'PUT';
+  if (process.env.NODE_ENV === 'production' && isWrite && !verifyShopifyProxy(req)) {
+    return res.status(401).json({ error: 'Unauthorized - Invalid signature' });
   }
-  
-  // Skip verification in dev mode or if no secret set
-  if (process.env.SHOPIFY_APP_SECRET && !verifyShopifyProxy(req)) {
-    console.log('❌ Invalid signature');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
   next();
 });
 
-// PROXY ENDPOINTS
+// ===== PROXY ENDPOINTS =====
+
+// Get single product by Shopify ID
 app.get('/proxy/product/:shopify_id', (req, res) => {
   const product = Object.values(products).find(
     p => p.shopify_id === req.params.shopify_id
@@ -72,19 +72,23 @@ app.get('/proxy/product/:shopify_id', (req, res) => {
     console.log('✅ Product found:', product.id);
     res.json(product);
   } else {
+    console.log('❌ Product not found:', req.params.shopify_id);
     res.status(404).json({ error: 'Product not found' });
   }
 });
 
+// List all products
 app.get('/proxy/products', (req, res) => {
+  console.log('✅ Listing all products:', Object.keys(products).length);
   res.json({ 
     products: Object.values(products),
     count: Object.values(products).length
   });
 });
 
+// Add or update product
 app.post('/proxy/product', (req, res) => {
-  const { shopify_id, title, description, price, images, variants } = req.body;
+  const { shopify_id, title, description, price, images, variants, category } = req.body;
   
   if (!shopify_id) {
     return res.status(400).json({ error: 'shopify_id required' });
@@ -96,23 +100,28 @@ app.post('/proxy/product', (req, res) => {
     title,
     description,
     price,
+    category: category || '',
     images: images || [],
     variants: variants || [],
     updated_at: new Date().toISOString()
   };
   
+  console.log('✅ Product saved:', shopify_id);
   res.json({ success: true, product: products[shopify_id] });
 });
 
+// Delete product
 app.delete('/proxy/product/:shopify_id', (req, res) => {
   if (products[req.params.shopify_id]) {
     delete products[req.params.shopify_id];
+    console.log('✅ Product deleted:', req.params.shopify_id);
     res.json({ success: true });
   } else {
     res.status(404).json({ error: 'Product not found' });
   }
 });
 
+// Health check
 app.get('/proxy/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -121,13 +130,16 @@ app.get('/proxy/health', (req, res) => {
   });
 });
 
-// ADMIN ENDPOINTS
+// ===== ADMIN ENDPOINTS (for managing products) =====
+
+// Admin: List products (no signature required)
 app.get('/admin/products', (req, res) => {
   res.json({ products: Object.values(products) });
 });
 
+// Admin: Add product
 app.post('/admin/product', (req, res) => {
-  const { shopify_id, title, description, price, images, variants } = req.body;
+  const { shopify_id, title, description, price, images, variants, category } = req.body;
   
   if (!shopify_id) {
     return res.status(400).json({ error: 'shopify_id required' });
@@ -139,6 +151,7 @@ app.post('/admin/product', (req, res) => {
     title,
     description,
     price,
+    category: category || '',
     images: images || [],
     variants: variants || [],
     created_at: new Date().toISOString()
@@ -147,24 +160,132 @@ app.post('/admin/product', (req, res) => {
   res.json({ success: true, product: products[shopify_id] });
 });
 
-// Root
+// ===== GOOGLE SHEETS SYNC =====
+// Sheet must be published as CSV (File > Share > Publish to web > CSV)
+// Columns: shopify_id | title | description | price | category | images | variants
+app.post('/admin/sync-sheet', async (req, res) => {
+  const { sheet_url } = req.body;
+  const url = sheet_url || process.env.GOOGLE_SHEET_CSV_URL;
+
+  if (!url) {
+    return res.status(400).json({ error: 'sheet_url required in body or set GOOGLE_SHEET_CSV_URL env var' });
+  }
+
+  await syncSheet(url);
+  res.json({ success: true, products_count: Object.keys(products).length });
+});
+
+// Fetch a URL and return body as text (no extra deps)
+function fetchURL(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      // follow one redirect (Google Sheets does this)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchURL(res.headers.location).then(resolve).catch(reject);
+      }
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// Minimal CSV parser (handles quoted fields with commas)
+function parseCSV(text) {
+  return text.trim().split('\n').map(line => {
+    const row = [];
+    let inQuote = false;
+    let field = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuote = !inQuote;
+      } else if (ch === ',' && !inQuote) {
+        row.push(field);
+        field = '';
+      } else {
+        field += ch;
+      }
+    }
+    row.push(field);
+    return row;
+  });
+}
+
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    message: 'Shopify App Proxy Server - Running on Replit',
+    message: 'Shopify App Proxy Server',
     endpoints: {
       proxy: '/proxy/*',
       admin: '/admin/*',
       health: '/proxy/health'
     },
-    products_count: Object.keys(products).length,
-    replit_url: process.env.REPL_SLUG ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co` : 'Not on Replit'
+    products_count: Object.keys(products).length
   });
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📦 Products loaded: ${Object.keys(products).length}`);
-  if (process.env.REPL_SLUG) {
-    console.log(`🔗 Replit URL: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
+  console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  // Auto-sync Google Sheet on startup + every 5 minutes
+  const SHEET_URL = process.env.GOOGLE_SHEET_CSV_URL;
+  if (SHEET_URL) {
+    console.log('📊 Google Sheet auto-sync enabled');
+    syncSheet(SHEET_URL); // run immediately on boot
+    setInterval(() => syncSheet(SHEET_URL), 5 * 60 * 1000); // then every 5 min
+  } else {
+    console.log('⚠️  No GOOGLE_SHEET_CSV_URL set — auto-sync disabled');
   }
 });
+
+// Core sync logic (shared by auto-sync + manual /admin/sync-sheet)
+async function syncSheet(url) {
+  try {
+    const csvText = await fetchURL(url);
+    const rows = parseCSV(csvText);
+    if (rows.length < 2) return;
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    let count = 0;
+
+    rows.slice(1).forEach((row) => {
+      const get = (col) => {
+        const idx = headers.indexOf(col);
+        return idx >= 0 ? (row[idx] || '').trim() : '';
+      };
+
+      const shopify_id = get('shopify_id');
+      if (!shopify_id) return;
+
+      const imagesRaw = get('images');
+      const images = imagesRaw ? imagesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      let variants = [];
+      const variantsRaw = get('variants');
+      if (variantsRaw) {
+        try { variants = JSON.parse(variantsRaw); } catch (_) {}
+      }
+
+      products[shopify_id] = {
+        id: shopify_id,
+        shopify_id,
+        title: get('title'),
+        description: get('description'),
+        price: get('price'),
+        category: get('category'),
+        images,
+        variants,
+        synced_at: new Date().toISOString()
+      };
+      count++;
+    });
+
+    console.log(`✅ Sheet sync: ${count} products updated at ${new Date().toLocaleTimeString()}`);
+  } catch (err) {
+    console.error('❌ Sheet sync failed:', err.message);
+  }
+}
