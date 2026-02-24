@@ -288,6 +288,78 @@ async function syncSheet(url) {
   }
 }
 
+// ===== GOOGLE MERCHANT FEED =====
+// XML feed URL: /feed/google-shopping.xml
+// Uses STORE_URL env var for product links (fallback to moversus domain)
+app.get('/feed/google-shopping.xml', (req, res) => {
+  const STORE_URL = process.env.STORE_URL || 'https://moversus.myshopify.com';
+
+  const allProducts = Object.values(products);
+
+  const itemsXml = allProducts.map((p) => {
+    const id = p.shopify_id || p.id;
+    const title = xmlEscape(p.title || '');
+    const description = xmlEscape(p.description || '');
+    const image = (Array.isArray(p.images) && p.images.length > 0) ? p.images[0] : '';
+    const price = Number(p.price || 0).toFixed(2);
+    const availability = getAvailability(p);
+    const handle = p.handle || slugify(p.title || '');
+    const productLink = `${STORE_URL}/products/${handle}`;
+
+    return `
+    <item>
+      <g:id>${xmlEscape(id)}</g:id>
+      <title>${title}</title>
+      <description>${description}</description>
+      <link>${xmlEscape(productLink)}</link>
+      <g:image_link>${xmlEscape(image)}</g:image_link>
+      <g:availability>${availability}</g:availability>
+      <g:condition>new</g:condition>
+      <g:price>${price} USD</g:price>
+      <g:brand>${xmlEscape(p.brand || 'MoversUS')}</g:brand>
+      <g:product_type>${xmlEscape(p.category || 'Movers')}</g:product_type>
+    </item>`;
+  }).join('\n');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
+  <channel>
+    <title>MoversUS Product Feed</title>
+    <link>${xmlEscape(STORE_URL)}</link>
+    <description>Google Shopping feed for MoversUS products</description>
+    ${itemsXml}
+  </channel>
+</rss>`;
+
+  res.set('Content-Type', 'application/xml; charset=utf-8');
+  res.send(xml);
+});
+
+// Helpers for feed
+function xmlEscape(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function slugify(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function getAvailability(product) {
+  if (Array.isArray(product.variants) && product.variants.length > 0) {
+    const hasAvailable = product.variants.some(v => v.available !== false);
+    return hasAvailable ? 'in_stock' : 'out_of_stock';
+  }
+  return 'in_stock';
+}
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
