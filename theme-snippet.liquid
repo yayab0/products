@@ -18,10 +18,12 @@
   const API_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}`;
   
   console.log('🔄 Loading product data from proxy...');
+  console.log('📍 Fetching from:', `${API_URL}/proxy/product/${PRODUCT_ID}`);
   
-  // Fetch product data
-  fetch(`${API_URL}/product/${PRODUCT_ID}`)
+  // Fetch product data - NOTE: /proxy/product path because server routes are under /proxy
+  fetch(`${API_URL}/proxy/product/${PRODUCT_ID}`)
     .then(response => {
+      console.log('📡 Response status:', response.status);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -34,18 +36,21 @@
       const titleEl = document.querySelector('.product__title, h1.product-title, [data-product-title]');
       if (titleEl && data.title) {
         titleEl.textContent = data.title;
+        console.log('✅ Title updated');
       }
       
       // Update product description
       const descEl = document.querySelector('.product__description, .product-description, [data-product-description]');
       if (descEl && data.description) {
-        descEl.innerHTML = data.description;
+        descEl.innerHTML = data.description.replace(/\n/g, '<br>');
+        console.log('✅ Description updated');
       }
       
       // Update price
       const priceEl = document.querySelector('.product__price, .price, [data-product-price]');
       if (priceEl && data.price) {
         priceEl.textContent = `$${data.price}`;
+        console.log('✅ Price updated');
       }
       
       // Update images (if provided)
@@ -53,6 +58,7 @@
         const imgEl = document.querySelector('.product__image img, .product-image img');
         if (imgEl) {
           imgEl.src = data.images[0];
+          console.log('✅ Image updated');
         }
       }
       
@@ -60,6 +66,8 @@
       document.dispatchEvent(new CustomEvent('shopify:proxy:loaded', { 
         detail: data 
       }));
+      
+      console.log('🎉 All product data injected successfully!');
     })
     .catch(error => {
       console.error('❌ Failed to load product data:', error);
