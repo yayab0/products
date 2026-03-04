@@ -1,0 +1,190 @@
+{% comment %}
+==========================================
+STEALTH CONTENT INJECTION SNIPPET
+==========================================
+This snippet dynamically injects enriched product data from your server
+into Shopify product pages WITHOUT modifying the visible page source.
+
+INSTALLATION:
+1. Go to Shopify Admin → Online Store → Themes → Actions → Edit code
+2. In "Snippets" folder, click "Add a new snippet"
+3. Name it: product-data-injection
+4. Paste this entire code
+5. In your theme.liquid (or main-product.liquid), add before </body>:
+   {% render 'product-data-injection' %}
+
+HOW IT WORKS:
+- Loads product data from your Render server via App Proxy
+- Injects title, description, images, price into the page dynamically
+- Google sees the injected content (DOM manipulation)
+- Works with Google Merchant Center feed
+- No visible code changes in source
+{% endcomment %}
+
+{% if template contains 'product' %}
+<script>
+(function() {
+  'use strict';
+  
+  const CONFIG = {
+    proxyUrl: 'https://moversus.myshopify.com/apps/products/proxy/product/{{ product.id }}',
+    debug: false
+  };
+
+  function log(...args) {
+    if (CONFIG.debug) console.log('[ProductInjector]', ...args);
+  }
+
+  function injectProductData(data) {
+    if (!data || !data.product) {
+      log('No product data received');
+      return;
+    }
+
+    const prod = data.product;
+    log('Injecting data for:', prod.title);
+
+    // Inject Title
+    const titleSelectors = [
+      '.product__title',
+      '.product-single__title',
+      'h1[itemprop="name"]',
+      '.product_name',
+      '[data-product-title]'
+    ];
+    
+    titleSelectors.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && prod.title) {
+        el.textContent = prod.title;
+        el.setAttribute('data-injected', 'true');
+        log('Title injected:', sel);
+      }
+    });
+
+    // Inject Description
+    const descSelectors = [
+      '.product__description',
+      '.product-single__description',
+      '[itemprop="description"]',
+      '.product_description',
+      '[data-product-description]'
+    ];
+    
+    descSelectors.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && prod.description) {
+        // Preserve HTML structure if description contains HTML
+        if (prod.description.includes('<')) {
+          el.innerHTML = prod.description;
+        } else {
+          // Convert newlines to <br> for plain text
+          el.innerHTML = prod.description.replace(/\n/g, '<br>');
+        }
+        el.setAttribute('data-injected', 'true');
+        log('Description injected:', sel);
+      }
+    });
+
+    // Inject Price
+    const priceSelectors = [
+      '.product__price',
+      '.product-single__price',
+      '[itemprop="price"]',
+      '.price',
+      '[data-product-price]'
+    ];
+    
+    priceSelectors.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && prod.price) {
+        const formattedPrice = parseFloat(prod.price).toFixed(2);
+        el.textContent = `$${formattedPrice}`;
+        el.setAttribute('content', formattedPrice);
+        el.setAttribute('data-injected', 'true');
+        log('Price injected:', sel);
+      }
+    });
+
+    // Inject Images (if main image exists)
+    if (prod.images && prod.images.length > 0) {
+      const imgSelectors = [
+        '.product__main-image img',
+        '.product-single__photo img',
+        '[data-product-featured-image]',
+        '.product_image img'
+      ];
+      
+      imgSelectors.forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) {
+          el.src = prod.images[0];
+          el.srcset = prod.images[0];
+          el.setAttribute('data-injected', 'true');
+          log('Image injected:', sel);
+        }
+      });
+    }
+
+    // Add structured data for Google
+    addStructuredData(prod);
+    
+    // Dispatch event for other scripts that may need this data
+    window.dispatchEvent(new CustomEvent('productDataInjected', { 
+      detail: { product: prod } 
+    }));
+  }
+
+  function addStructuredData(prod) {
+    // Remove existing schema if present
+    const existingSchema = document.querySelector('script[type="application/ld+json"][data-injected="true"]');
+    if (existingSchema) existingSchema.remove();
+
+    const schema = {
+      "@context": "https://schema.org/",
+      "@type": "Product",
+      "name": prod.title,
+      "description": prod.description,
+      "image": prod.images || [],
+      "offers": {
+        "@type": "Offer",
+        "price": prod.price,
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
+      }
+    };
+
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.setAttribute('data-injected', 'true');
+    script.textContent = JSON.stringify(schema);
+    document.head.appendChild(script);
+    log('Structured data added');
+  }
+
+  function loadProductData() {
+    log('Fetching product data from:', CONFIG.proxyUrl);
+    
+    fetch(CONFIG.proxyUrl)
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        injectProductData(data);
+      })
+      .catch(error => {
+        log('Error loading product data:', error);
+      });
+  }
+
+  // Run on DOMContentLoaded or immediately if already loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadProductData);
+  } else {
+    loadProductData();
+  }
+
+})();
+</script>
+{% endif %}
