@@ -18,10 +18,10 @@
   const API_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}`;
   
   console.log('🔄 Loading product data from proxy...');
-  console.log('📍 Fetching from:', `${API_URL}/proxy/product/${PRODUCT_ID}`);
+  console.log('📍 Fetching from:', `${API_URL}/product/${PRODUCT_ID}`);
   
-  // Fetch product data - NOTE: /proxy/product path because server routes are under /proxy
-  fetch(`${API_URL}/proxy/product/${PRODUCT_ID}`)
+  // Fetch product data - Shopify App Proxy will forward to /proxy/product/ on server
+  fetch(`${API_URL}/product/${PRODUCT_ID}`)
     .then(response => {
       console.log('📡 Response status:', response.status);
       if (!response.ok) {

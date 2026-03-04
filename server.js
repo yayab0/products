@@ -85,7 +85,23 @@ app.use('/proxy', (req, res, next) => {
 });
 
 // ===== PROXY ENDPOINTS =====
+// Main routes (used when calling server directly)
 app.get('/proxy/product/:shopify_id', (req, res) => {
+  const product = Object.values(products).find(
+    p => p.shopify_id === req.params.shopify_id
+  );
+
+  if (product) {
+    return res.json(product);
+  } else {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+});
+
+// Duplicate routes without /proxy prefix for Shopify App Proxy compatibility
+// When Shopify forwards /apps/products/product/123, it becomes /proxy/product/123 on server
+// But if your App Proxy adds /proxy automatically, we need these routes too
+app.get('/product/:shopify_id', (req, res) => {
   const product = Object.values(products).find(
     p => p.shopify_id === req.params.shopify_id
   );
