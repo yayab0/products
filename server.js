@@ -168,7 +168,7 @@ app.get('/admin/products', (req, res) => {
 });
 
 app.post('/admin/product', (req, res) => {
-  const { shopify_id, title, description, price, images, variants, category } = req.body;
+  const { shopify_id, title, description, price, images, variants, category, handle } = req.body;
 
   if (!shopify_id) {
     return res.status(400).json({ error: 'shopify_id required' });
@@ -183,6 +183,7 @@ app.post('/admin/product', (req, res) => {
     category: category || '',
     images: images || [],
     variants: variants || [],
+    handle: handle || '',
     updated_at: new Date().toISOString()
   };
 
