@@ -1,87 +1,88 @@
 {% comment %}
-  Product Schema.org JSON-LD for Google Crawlers
-  Removes existing schemas and replaces with server data
+  Product Schema.org JSON-LD Override
+  This removes Shopify's default Product schema and replaces it with server data
+  CRITICAL: This must be placed AFTER Shopify's default schema in theme.liquid
 {% endcomment %}
 
 {% if template contains 'product' %}
 <script>
-// Remove all existing Product schemas to avoid duplicates
+// STEP 1: Remove Shopify's Product schema immediately (before Google crawls)
 (function() {
-  // Wait for DOM to be ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', removeExistingSchemas);
-  } else {
-    removeExistingSchemas();
-  }
+  // Remove existing Product schemas from the DOM
+  const allSchemas = document.querySelectorAll('script[type="application/ld+json"]');
+  let removedCount = 0;
   
-  function removeExistingSchemas() {
-    // Remove all existing Product schemas from the theme
-    const allSchemas = document.querySelectorAll('script[type="application/ld+json"]');
-    allSchemas.forEach(script => {
-      try {
-        const data = JSON.parse(script.textContent);
-        if (data['@type'] === 'Product' || (data['@graph'] && data['@graph'].some(item => item['@type'] === 'Product'))) {
-          script.remove();
-          console.log('🗑️ Removed existing Product schema');
-        }
-      } catch (e) {
-        // Invalid JSON, skip
+  allSchemas.forEach(script => {
+    try {
+      const data = JSON.parse(script.textContent);
+      // Remove if it's a Product schema (contains Shopify's wrong data)
+      if (data['@type'] === 'Product' || 
+          (data['@id'] && data['@id'].includes('#product')) ||
+          (data['@graph'] && data['@graph'].some(item => item['@type'] === 'Product'))) {
+        script.remove();
+        removedCount++;
       }
-    });
-    
-    // Now inject our schema
-    injectServerSchema();
-  }
+    } catch (e) {
+      // Skip invalid JSON
+    }
+  });
   
-  function injectServerSchema() {
-    const PRODUCT_ID = '{{ product.id }}';
-    const PROXY_PATH = '/apps/products';
-    const SHOP_DOMAIN = '{{ shop.domain }}';
-    
-    if (!PRODUCT_ID) return;
-    
-    fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
-      .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch'))
-      .then(data => {
-        const schema = {
-          "@context": "https://schema.org/",
-          "@type": "Product",
-          "name": data.title || "Product",
-          "description": data.description ? data.description.substring(0, 5000) : "",
-          "sku": String(data.shopify_id || data.id),
-          "brand": {
-            "@type": "Brand",
-            "name": "{{ shop.name }}"
-          },
-          "offers": {
-            "@type": "Offer",
-            "url": window.location.href,
-            "priceCurrency": "USD",
-            "price": String(data.price || "0"),
-            "availability": "https://schema.org/InStock",
-            "seller": {
-              "@type": "Organization",
-              "name": "{{ shop.name }}"
-            }
-          }
-        };
-        
-        // Add images if available
-        if (data.images && Array.isArray(data.images) && data.images.length > 0) {
-          schema.image = data.images;
-        }
-        
-        // Inject new schema
-        const schemaScript = document.createElement('script');
-        schemaScript.type = 'application/ld+json';
-        schemaScript.id = 'server-product-schema';
-        schemaScript.textContent = JSON.stringify(schema, null, 2);
-        document.head.appendChild(schemaScript);
-        
-        console.log('✅ Server Product schema injected:', schema);
-      })
-      .catch(err => console.error('❌ Schema injection failed:', err));
+  if (removedCount > 0) {
+    console.log(`🗑️ Removed ${removedCount} Shopify Product schema(s)`);
   }
+})();
+
+// STEP 2: Inject server Product schema
+(function() {
+  const PRODUCT_ID = '{{ product.id }}';
+  const PROXY_PATH = '/apps/products';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  
+  if (!PRODUCT_ID) return;
+  
+  // Fetch server data and inject schema
+  fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
+    .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch'))
+    .then(data => {
+      const schema = {
+        "@context": "https://schema.org/",
+        "@type": "Product",
+        "name": data.title || "Product",
+        "description": data.description ? data.description.substring(0, 5000) : "",
+        "sku": String(data.shopify_id || data.id),
+        "brand": {
+          "@type": "Brand",
+          "name": "{{ shop.name }}"
+        },
+        "offers": {
+          "@type": "Offer",
+          "url": window.location.href,
+          "priceCurrency": "USD",
+          "price": String(data.price || "0"),
+          "availability": "https://schema.org/InStock",
+          "seller": {
+            "@type": "Organization",
+            "name": "{{ shop.name }}"
+          }
+        }
+      };
+      
+      // Add images if available
+      if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+        schema.image = data.images;
+      }
+      
+      // Inject new schema at the END of head (so it's the last one Google sees)
+      const schemaScript = document.createElement('script');
+      schemaScript.type = 'application/ld+json';
+      schemaScript.id = 'server-product-schema';
+      schemaScript.setAttribute('data-source', 'server');
+      schemaScript.textContent = JSON.stringify(schema, null, 2);
+      document.head.appendChild(schemaScript);
+      
+      console.log('✅ Server Product schema injected:', schema);
+    })
+    .catch(err => console.error('❌ Schema injection failed:', err));
 })();
 </script>
 {% endif %}

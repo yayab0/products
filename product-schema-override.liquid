@@ -1,0 +1,108 @@
+{% comment %}
+  Product Schema Override - Server-Side Solution
+  This snippet disables Shopify's default Product schema and uses only Organization schema
+  Place this BEFORE closing </head> tag in theme.liquid
+{% endcomment %}
+
+{% if template contains 'product' %}
+<style>
+  /* Hide Shopify's default Product schema from crawlers */
+  script[type="application/ld+json"]:has(*[data-type="product"]) {
+    display: none !important;
+  }
+</style>
+
+<script>
+// Aggressive Product schema removal (runs immediately, before DOM ready)
+(function() {
+  // Remove Product schemas as soon as possible
+  const observer = new MutationObserver(function(mutations) {
+    const schemas = document.querySelectorAll('script[type="application/ld+json"]');
+    schemas.forEach(script => {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'Product' || 
+            (data['@id'] && data['@id'].includes('#product'))) {
+          // Mark for removal
+          script.setAttribute('data-shopify-product', 'true');
+          script.remove();
+        }
+      } catch (e) {}
+    });
+  });
+  
+  // Start observing
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Also remove immediately
+  setTimeout(() => {
+    const schemas = document.querySelectorAll('script[type="application/ld+json"]');
+    schemas.forEach(script => {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'Product' || 
+            (data['@id'] && data['@id'].includes('#product'))) {
+          script.remove();
+          console.log('🗑️ Removed Shopify Product schema');
+        }
+      } catch (e) {}
+    });
+  }, 0);
+  
+  // Stop observing after 2 seconds
+  setTimeout(() => observer.disconnect(), 2000);
+})();
+
+// Inject server Product schema
+(function() {
+  const PRODUCT_ID = '{{ product.id }}';
+  const PROXY_PATH = '/apps/products';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  
+  if (!PRODUCT_ID) return;
+  
+  fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
+    .then(res => res.ok ? res.json() : Promise.reject())
+    .then(data => {
+      const schema = {
+        "@context": "https://schema.org/",
+        "@type": "Product",
+        "name": data.title || "Product",
+        "description": data.description ? data.description.substring(0, 5000) : "",
+        "sku": String(data.shopify_id || data.id),
+        "brand": {
+          "@type": "Brand",
+          "name": "{{ shop.name }}"
+        },
+        "offers": {
+          "@type": "Offer",
+          "url": "https://{{ shop.domain }}/products/{{ product.handle }}",
+          "priceCurrency": "USD",
+          "price": String(data.price || "0"),
+          "availability": "https://schema.org/InStock",
+          "seller": {
+            "@type": "Organization",
+            "name": "{{ shop.name }}"
+          }
+        }
+      };
+      
+      if (data.images && data.images.length > 0) {
+        schema.image = data.images;
+      }
+      
+      const schemaScript = document.createElement('script');
+      schemaScript.type = 'application/ld+json';
+      schemaScript.setAttribute('data-source', 'server');
+      schemaScript.textContent = JSON.stringify(schema);
+      document.head.appendChild(schemaScript);
+      
+      console.log('✅ Server schema injected');
+    })
+    .catch(err => console.error('❌ Schema failed:', err));
+})();
+</script>
+{% endif %}
