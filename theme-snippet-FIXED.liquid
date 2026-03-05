@@ -2,6 +2,7 @@
   Shopify App Proxy - Fast Product Data Loader + Carousel Fallback
   ---------------------------------------------------------------
   Works with App Proxy URL: https://products-7t0s.onrender.com/proxy
+  Shopify forwards /apps/products/ANYTHING to https://products-7t0s.onrender.com/proxy/ANYTHING
 {% endcomment %}
 
 <script>
@@ -9,7 +10,7 @@
   const PRODUCT_ID = '{{ product.id }}';
   const SHOP_DOMAIN = '{{ shop.domain }}';
   const PROXY_PATH = '/apps/products';
-  const REQUEST_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}/proxy/product/${PRODUCT_ID}`;
+  const REQUEST_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`;
 
   const CACHE_KEY = `proxy_product_${PRODUCT_ID}`;
   const CACHE_TTL_MS = 30 * 1000; // 30s
