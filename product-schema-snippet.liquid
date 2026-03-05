@@ -1,78 +1,87 @@
 {% comment %}
   Product Schema.org JSON-LD for Google Crawlers
-  This provides structured data that gets dynamically updated with server data
+  Removes existing schemas and replaces with server data
 {% endcomment %}
 
 {% if template contains 'product' %}
-<script type="application/ld+json" id="product-schema">
-{
-  "@context": "https://schema.org/",
-  "@type": "Product",
-  "name": "Loading...",
-  "sku": "{{ product.id }}",
-  "offers": {
-    "@type": "Offer",
-    "url": "{{ shop.url }}{{ product.url }}",
-    "priceCurrency": "USD",
-    "price": "0",
-    "availability": "https://schema.org/InStock",
-    "seller": {
-      "@type": "Organization",
-      "name": "{{ shop.name }}"
-    }
-  }
-}
-</script>
-
 <script>
-// Update Schema.org with server data
+// Remove all existing Product schemas to avoid duplicates
 (function() {
-  const PRODUCT_ID = '{{ product.id }}';
-  const PROXY_PATH = '/apps/products';
-  const SHOP_DOMAIN = '{{ shop.domain }}';
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', removeExistingSchemas);
+  } else {
+    removeExistingSchemas();
+  }
   
-  if (!PRODUCT_ID) return;
-  
-  fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
-    .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch'))
-    .then(data => {
-      const schema = {
-        "@context": "https://schema.org/",
-        "@type": "Product",
-        "name": data.title || "Product",
-        "description": data.description ? data.description.substring(0, 5000) : "",
-        "sku": String(data.shopify_id || data.id),
-        "brand": {
-          "@type": "Brand",
-          "name": "{{ shop.name }}"
-        },
-        "offers": {
-          "@type": "Offer",
-          "url": window.location.href,
-          "priceCurrency": "USD",
-          "price": String(data.price || "0"),
-          "availability": "https://schema.org/InStock",
-          "seller": {
-            "@type": "Organization",
-            "name": "{{ shop.name }}"
-          }
+  function removeExistingSchemas() {
+    // Remove all existing Product schemas from the theme
+    const allSchemas = document.querySelectorAll('script[type="application/ld+json"]');
+    allSchemas.forEach(script => {
+      try {
+        const data = JSON.parse(script.textContent);
+        if (data['@type'] === 'Product' || (data['@graph'] && data['@graph'].some(item => item['@type'] === 'Product'))) {
+          script.remove();
+          console.log('🗑️ Removed existing Product schema');
         }
-      };
-      
-      // Add images if available
-      if (data.images && Array.isArray(data.images) && data.images.length > 0) {
-        schema.image = data.images;
+      } catch (e) {
+        // Invalid JSON, skip
       }
-      
-      // Update the schema
-      const schemaScript = document.getElementById('product-schema');
-      if (schemaScript) {
+    });
+    
+    // Now inject our schema
+    injectServerSchema();
+  }
+  
+  function injectServerSchema() {
+    const PRODUCT_ID = '{{ product.id }}';
+    const PROXY_PATH = '/apps/products';
+    const SHOP_DOMAIN = '{{ shop.domain }}';
+    
+    if (!PRODUCT_ID) return;
+    
+    fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
+      .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch'))
+      .then(data => {
+        const schema = {
+          "@context": "https://schema.org/",
+          "@type": "Product",
+          "name": data.title || "Product",
+          "description": data.description ? data.description.substring(0, 5000) : "",
+          "sku": String(data.shopify_id || data.id),
+          "brand": {
+            "@type": "Brand",
+            "name": "{{ shop.name }}"
+          },
+          "offers": {
+            "@type": "Offer",
+            "url": window.location.href,
+            "priceCurrency": "USD",
+            "price": String(data.price || "0"),
+            "availability": "https://schema.org/InStock",
+            "seller": {
+              "@type": "Organization",
+              "name": "{{ shop.name }}"
+            }
+          }
+        };
+        
+        // Add images if available
+        if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+          schema.image = data.images;
+        }
+        
+        // Inject new schema
+        const schemaScript = document.createElement('script');
+        schemaScript.type = 'application/ld+json';
+        schemaScript.id = 'server-product-schema';
         schemaScript.textContent = JSON.stringify(schema, null, 2);
-      }
-      
-      console.log('✅ Schema.org updated:', schema);
-    })
-    .catch(err => console.error('❌ Schema update failed:', err));
+        document.head.appendChild(schemaScript);
+        
+        console.log('✅ Server Product schema injected:', schema);
+      })
+      .catch(err => console.error('❌ Schema injection failed:', err));
+  }
 })();
 </script>
 {% endif %}
