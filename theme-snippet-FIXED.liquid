@@ -9,7 +9,7 @@
   const PRODUCT_ID = '{{ product.id }}';
   const SHOP_DOMAIN = '{{ shop.domain }}';
   const PROXY_PATH = '/apps/products';
-  const REQUEST_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}/proxy/product/${PRODUCT_ID}`;
+  const REQUEST_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`;
 
   const CACHE_KEY = `proxy_product_${PRODUCT_ID}`;
   const CACHE_TTL_MS = 30 * 1000; // 30s
