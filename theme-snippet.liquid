@@ -9,19 +9,16 @@
 
 <script>
 (function() {
-  // Configuration
-  const PROXY_PATH = '/apps/products'; // Match your app proxy subpath
+  // Configuration - DIRECT SERVER CONNECTION (bypasses Shopify App Proxy)
   const PRODUCT_ID = '{{ product.id }}';
-  const SHOP_DOMAIN = '{{ shop.domain }}';
+  const SERVER_URL = 'https://products-7t0s.onrender.com';
   
-  // Build API URL (uses YOUR Shopify domain via proxy)
-  const API_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}`;
+  console.log('🔄 Loading product data from server...');
+  console.log('📍 Product ID:', PRODUCT_ID);
+  console.log('📍 Fetching from:', `${SERVER_URL}/proxy/product/${PRODUCT_ID}`);
   
-  console.log('🔄 Loading product data from proxy...');
-  console.log('📍 Fetching from:', `${API_URL}/product/${PRODUCT_ID}`);
-  
-  // Fetch product data - Shopify App Proxy will forward to /proxy/product/ on server
-  fetch(`${API_URL}/product/${PRODUCT_ID}`)
+  // Fetch directly from Render server
+  fetch(`${SERVER_URL}/proxy/product/${PRODUCT_ID}`)
     .then(response => {
       console.log('📡 Response status:', response.status);
       if (!response.ok) {
