@@ -7,7 +7,10 @@
   3. Make sure your app proxy is configured in Shopify
 {% endcomment %}
 
+{% if template contains 'product' %}
 <script>
+console.log('🟢 SNIPPET LOADED - Script is running!');
+
 (function() {
   // Configuration - DIRECT SERVER CONNECTION (bypasses Shopify App Proxy)
   const PRODUCT_ID = '{{ product.id }}';
@@ -72,6 +75,11 @@
     });
 })();
 </script>
+{% else %}
+<script>
+console.log('⚠️ SNIPPET LOADED BUT NOT ON PRODUCT PAGE - Current template: {{ template }}');
+</script>
+{% endif %}
 
 <style>
   /* Optional: Add loading state */
