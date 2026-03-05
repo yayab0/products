@@ -1,0 +1,360 @@
+{% comment %}
+  Shopify App Proxy - Fast Product Data Loader + Carousel Fallback
+  ---------------------------------------------------------------
+  FIXED VERSION - Added /proxy to the URL path
+{% endcomment %}
+
+<script>
+(function () {
+  const PRODUCT_ID = '{{ product.id }}';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  const PROXY_PATH = '/apps/products';
+  const REQUEST_URL = `https://${SHOP_DOMAIN}${PROXY_PATH}/proxy/product/${PRODUCT_ID}`;
+
+  const CACHE_KEY = `proxy_product_${PRODUCT_ID}`;
+  const CACHE_TTL_MS = 30 * 1000; // 30s
+
+  if (!PRODUCT_ID || PRODUCT_ID === 'null' || PRODUCT_ID === 'undefined') {
+    console.warn('Proxy: no product id found');
+    return;
+  }
+
+  function qsa(sel) {
+    return document.querySelectorAll(sel);
+  }
+
+  function setTextAll(selectors, value) {
+    if (!value && value !== 0) return 0;
+    let count = 0;
+    selectors.forEach((sel) => {
+      qsa(sel).forEach((el) => {
+        const next = String(value);
+        if (el.textContent !== next) {
+          el.textContent = next;
+          count++;
+        }
+      });
+    });
+    return count;
+  }
+
+  function setHTMLFirst(selectors, html) {
+    if (!html) return false;
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) {
+        if (el.innerHTML !== html) el.innerHTML = html;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function ensureProxyImageContainer() {
+    let container =
+      document.querySelector('.proxy-product-image-wrap') ||
+      document.querySelector('.product__media-wrapper, .product-media-wrapper, .media-gallery, .product-gallery, main');
+
+    if (!container) return null;
+
+    if (!container.classList.contains('proxy-product-image-wrap')) {
+      let wrap = document.querySelector('.proxy-product-image-wrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'proxy-product-image-wrap';
+        wrap.style.margin = '16px 0';
+        container.insertAdjacentElement('afterbegin', wrap);
+      }
+      container = wrap;
+    }
+
+    return container;
+  }
+
+  function renderInjectedCarousel(images) {
+    const container = ensureProxyImageContainer();
+    if (!container || !images || !images.length) return 0;
+
+    const id = 'proxy-carousel-' + Math.random().toString(36).slice(2, 8);
+
+    container.innerHTML = `
+      <div id="${id}" class="proxy-carousel" style="max-width:620px;margin:0 auto;">
+        <div class="proxy-main" style="position:relative;border-radius:10px;overflow:hidden;background:#fff;border:1px solid #eee;">
+          <img class="proxy-main-img" src="${images[0]}" alt="Product image"
+               loading="eager" decoding="async"
+               style="width:100%;height:auto;display:block;aspect-ratio:4/3;object-fit:contain;background:#fff;max-height:460px;" />
+          <button class="proxy-prev" aria-label="Previous image"
+            style="position:absolute;left:10px;top:50%;transform:translateY(-50%);border:none;border-radius:999px;width:36px;height:36px;cursor:pointer;background:rgba(0,0,0,.55);color:#fff;font-size:24px;line-height:1;">‹</button>
+          <button class="proxy-next" aria-label="Next image"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);border:none;border-radius:999px;width:36px;height:36px;cursor:pointer;background:rgba(0,0,0,.55);color:#fff;font-size:24px;line-height:1;">›</button>
+        </div>
+        <div class="proxy-thumbs" style="display:flex;gap:8px;overflow-x:auto;margin-top:10px;padding-bottom:4px;">
+          ${images.map((src, i) => `
+            <button data-index="${i}" type="button"
+              style="padding:0;border:${i===0 ? '2px solid #111' : '1px solid #ddd'};border-radius:8px;cursor:pointer;background:#fff;flex:0 0 auto;">
+              <img src="${src}" alt="Thumbnail ${i+1}" loading="lazy" decoding="async"
+                   style="width:52px;height:52px;object-fit:cover;display:block;border-radius:6px;" />
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const root = container.querySelector(`#${id}`);
+    if (!root) return 0;
+
+    const mainImg = root.querySelector('.proxy-main-img');
+    const prevBtn = root.querySelector('.proxy-prev');
+    const nextBtn = root.querySelector('.proxy-next');
+    const thumbBtns = Array.from(root.querySelectorAll('.proxy-thumbs button'));
+
+    let current = 0;
+    const total = images.length;
+
+    function show(index) {
+      current = (index + total) % total;
+      mainImg.src = images[current];
+      thumbBtns.forEach((b, i) => {
+        b.style.border = i === current ? '2px solid #111' : '1px solid #ddd';
+      });
+    }
+
+    prevBtn.addEventListener('click', () => show(current - 1), { passive: true });
+    nextBtn.addEventListener('click', () => show(current + 1), { passive: true });
+    thumbBtns.forEach((b, i) => b.addEventListener('click', () => show(i), { passive: true }));
+
+    return total;
+  }
+
+  function updateThemeImages(images) {
+    if (!Array.isArray(images) || images.length === 0) return 0;
+
+    const selectors = [
+      '.product-media img',
+      '.product__media img',
+      '.media-gallery img',
+      '.media img',
+      '.product-gallery img',
+      '[data-testid="sticky-product-image"]',
+      'img.product-featured-media'
+    ];
+
+    let updated = 0;
+    selectors.forEach((sel) => {
+      qsa(sel).forEach((img, idx) => {
+        const src = images[idx] || images[0];
+        if (!src || img.src === src) return;
+        img.src = src;
+        img.setAttribute('src', src);
+        img.setAttribute('srcset', '');
+        if (img.dataset) img.dataset.src = src;
+        updated++;
+      });
+    });
+
+    if (images[0]) {
+      const og = document.querySelector('meta[property="og:image"]');
+      if (og && og.getAttribute('content') !== images[0]) og.setAttribute('content', images[0]);
+      const tw = document.querySelector('meta[name="twitter:image"]');
+      if (tw && tw.getAttribute('content') !== images[0]) tw.setAttribute('content', images[0]);
+    }
+
+    return updated;
+  }
+
+  function formatDescription(text) {
+    if (!text) return '';
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let html = '';
+    let inList = false;
+
+    const headingSet = new Set([
+      'Product Overview',
+      'Key Features',
+      'Uses',
+      'Benefits',
+      'Advantages',
+      'Technical Data'
+    ]);
+
+    for (const line of lines) {
+      const isBullet = line.startsWith('- ') || line.startsWith('• ') || /^\d+\.\s+/.test(line);
+      const cleanLine = line.replace(/^[-•]\s+/, '');
+
+      if (headingSet.has(line)) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<h3 style="margin:18px 0 8px;font-size:1.15em;">${line}</h3>`;
+      } else if (isBullet) {
+        if (!inList) { html += '<ul style="margin:0 0 12px 18px;padding:0;">'; inList = true; }
+        html += `<li style="margin:0 0 6px;">${cleanLine}</li>`;
+      } else {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<p style="margin:0 0 12px;line-height:1.65;">${line}</p>`;
+      }
+    }
+
+    if (inList) html += '</ul>';
+    return html;
+  }
+
+  function applyData(data) {
+    const title = data?.title || '';
+    const description = data?.description || '';
+    const rawPrice = data?.price;
+
+    const num = Number(rawPrice);
+    const priceText =
+      Number.isFinite(num) && num >= 0
+        ? `$${num.toLocaleString()}`
+        : (rawPrice ? `$${rawPrice}` : '');
+
+    // Title
+    setTextAll([
+      '[data-product-title]',
+      '.product__title',
+      '.product-title',
+      '.product-details__title',
+      '.sticky-add-to-cart__title',
+      'main h1'
+    ], title);
+
+    // Description (formatted HTML)
+    const descriptionHTML = formatDescription(description);
+    setHTMLFirst([
+      '[data-product-description]',
+      '.product__description',
+      '.product-description',
+      '.product-details__description',
+      '.accordion__content .rte',
+      'main .rte'
+    ], descriptionHTML);
+
+    // Update theme price nodes if available
+    const priceSelectors = [
+      '[data-product-price]',
+      '[data-price]',
+      '[data-testid="sticky-price-display"]',
+      '.product__price',
+      '.product__price .price-item--regular',
+      '.product__price .price-item',
+      '.price',
+      '.price .price-item--regular',
+      '.price .money',
+      '.product-price',
+      '.product-single__price',
+      '.ProductMeta__Price',
+      '.product-form__buttons .price',
+      'main [class*="price"]'
+    ];
+
+    let priceUpdated = 0;
+    priceSelectors.forEach((sel) => {
+      qsa(sel).forEach((el) => {
+        const moneyNode = el.matches('.money') ? el : el.querySelector('.money');
+        const target = moneyNode || el;
+        if (target && priceText && target.textContent.trim() !== priceText) {
+          target.textContent = priceText;
+          target.setAttribute('data-proxy-price', priceText);
+          priceUpdated++;
+        }
+      });
+    });
+
+    // Always force a visible price block BEFORE description
+    if (priceText) {
+      let fallback = document.querySelector('#proxy-price-fallback');
+      if (!fallback) {
+        fallback = document.createElement('div');
+        fallback.id = 'proxy-price-fallback';
+        fallback.style.cssText = `
+          font-size: 2rem;
+          font-weight: 700;
+          margin: 10px 0 16px;
+          color: #111;
+          display: block;
+          width: 100%;
+          line-height: 1.2;
+        `;
+      }
+      fallback.textContent = priceText;
+
+      const descAnchor =
+        document.querySelector('.product__description') ||
+        document.querySelector('.product-description') ||
+        document.querySelector('.product-details__description') ||
+        document.querySelector('.accordion__content .rte') ||
+        document.querySelector('main .rte');
+
+      if (descAnchor) {
+        descAnchor.insertAdjacentElement('beforebegin', fallback);
+      } else {
+        const titleEl = document.querySelector('.product__title, main h1');
+        if (titleEl) titleEl.insertAdjacentElement('afterend', fallback);
+      }
+    }
+
+    // Images
+    if (Array.isArray(data.images) && data.images.length > 0) {
+      const imageCount = updateThemeImages(data.images);
+      if (imageCount === 0) renderInjectedCarousel(data.images);
+    }
+
+    console.log('Proxy apply result:', { priceText, priceUpdated });
+  }
+
+  function applyDataBatched(data) {
+    requestAnimationFrame(() => applyData(data));
+    setTimeout(() => requestAnimationFrame(() => applyData(data)), 600);
+  }
+
+  function getCachedData() {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.ts || !parsed.data) return null;
+      if (Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function setCachedData(data) {
+    try {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+    } catch (_) {}
+  }
+
+  const cached = getCachedData();
+  if (cached) {
+    applyDataBatched(cached);
+    document.dispatchEvent(new CustomEvent('shopify:proxy:loaded', { detail: cached }));
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+
+  fetch(REQUEST_URL, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'default',
+    signal: controller.signal
+  })
+    .then((res) => {
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .then((data) => {
+      console.log('✅ Proxy product data loaded:', data);
+      setCachedData(data);
+      applyDataBatched(data);
+      document.dispatchEvent(new CustomEvent('shopify:proxy:loaded', { detail: data }));
+    })
+    .catch((err) => {
+      console.error('❌ Proxy load failed:', err);
+    });
+})();
+</script>
