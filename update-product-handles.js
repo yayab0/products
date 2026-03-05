@@ -7,11 +7,11 @@ const SERVER_URL = 'https://products-7t0s.onrender.com';
 
 // Map of product IDs to their correct Shopify handles
 const PRODUCT_HANDLES = {
-  '10028650365225': 'jj',           // Husqvarna P 524X EFI
-  '10026814996777': 'lols',         // AS-Motor 800 FreeRider
-  '10028654493993': 'package-1',    // Toro Titan ZXM5475
-  '10028648825129': 's',            // Cub Cadet Z5 152
-  '10028641550633': 'ls-fofo',      // Efco Tuareg 92 EVO ✅
+  '10026814996777': 'jj',           // AS-Motor 800 FreeRider
+  '10028654493993': 's',            // Toro Titan ZXM5475
+  '10028641550633': 'ls-fofo',      // Efco Tuareg 92 EVO
+  '10028650365225': 'package-1',    // Husqvarna P 524X EFI
+  '10028648825129': 'lols',         // Cub Cadet Z5 152
 };
 
 async function updateProductHandles() {
