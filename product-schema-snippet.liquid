@@ -1,0 +1,78 @@
+{% comment %}
+  Product Schema.org JSON-LD for Google Crawlers
+  This provides structured data that gets dynamically updated with server data
+{% endcomment %}
+
+{% if template contains 'product' %}
+<script type="application/ld+json" id="product-schema">
+{
+  "@context": "https://schema.org/",
+  "@type": "Product",
+  "name": "Loading...",
+  "sku": "{{ product.id }}",
+  "offers": {
+    "@type": "Offer",
+    "url": "{{ shop.url }}{{ product.url }}",
+    "priceCurrency": "USD",
+    "price": "0",
+    "availability": "https://schema.org/InStock",
+    "seller": {
+      "@type": "Organization",
+      "name": "{{ shop.name }}"
+    }
+  }
+}
+</script>
+
+<script>
+// Update Schema.org with server data
+(function() {
+  const PRODUCT_ID = '{{ product.id }}';
+  const PROXY_PATH = '/apps/products';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  
+  if (!PRODUCT_ID) return;
+  
+  fetch(`https://${SHOP_DOMAIN}${PROXY_PATH}/product/${PRODUCT_ID}`)
+    .then(res => res.ok ? res.json() : Promise.reject('Failed to fetch'))
+    .then(data => {
+      const schema = {
+        "@context": "https://schema.org/",
+        "@type": "Product",
+        "name": data.title || "Product",
+        "description": data.description ? data.description.substring(0, 5000) : "",
+        "sku": String(data.shopify_id || data.id),
+        "brand": {
+          "@type": "Brand",
+          "name": "{{ shop.name }}"
+        },
+        "offers": {
+          "@type": "Offer",
+          "url": window.location.href,
+          "priceCurrency": "USD",
+          "price": String(data.price || "0"),
+          "availability": "https://schema.org/InStock",
+          "seller": {
+            "@type": "Organization",
+            "name": "{{ shop.name }}"
+          }
+        }
+      };
+      
+      // Add images if available
+      if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+        schema.image = data.images;
+      }
+      
+      // Update the schema
+      const schemaScript = document.getElementById('product-schema');
+      if (schemaScript) {
+        schemaScript.textContent = JSON.stringify(schema, null, 2);
+      }
+      
+      console.log('✅ Schema.org updated:', schema);
+    })
+    .catch(err => console.error('❌ Schema update failed:', err));
+})();
+</script>
+{% endif %}
