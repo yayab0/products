@@ -112,6 +112,10 @@
   
   function updateProductCard(card, data, shopifyId) {
     console.log(`  🔧 Updating card for: ${data.title.substring(0, 40)}...`);
+    console.log(`     Images available: ${data.images ? data.images.length : 0}`);
+    if (data.images && data.images.length > 0) {
+      console.log(`     First image: ${data.images[0].substring(0, 60)}...`);
+    }
     
     // Update ALL text nodes that contain the product ID
     const walker = document.createTreeWalker(
@@ -172,17 +176,33 @@
       });
     }
     
-    // Update images
+    // Update images - AGGRESSIVE REPLACEMENT
     if (data.images && data.images.length > 0) {
       const images = card.querySelectorAll('img');
+      let imageCount = 0;
       images.forEach((img, idx) => {
-        if (data.images[0]) {
-          img.src = data.images[0];
+        const imageUrl = data.images[idx % data.images.length]; // Cycle through available images
+        if (imageUrl) {
+          // Force replace all image attributes
+          img.src = imageUrl;
           img.srcset = '';
+          img.setAttribute('srcset', '');
+          img.sizes = '';
           img.alt = data.title;
-          console.log(`    ✓ Updated image`);
+          
+          // Remove lazy loading to show immediately
+          img.loading = 'eager';
+          img.removeAttribute('data-src');
+          img.removeAttribute('data-srcset');
+          
+          // Force display
+          img.style.opacity = '1';
+          img.style.visibility = 'visible';
+          
+          imageCount++;
         }
       });
+      console.log(`    ✓ Updated ${imageCount} images`);
     }
     
     // Update links to use correct handle
