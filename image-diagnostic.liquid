@@ -1,0 +1,59 @@
+{% comment %}
+  Image Diagnostic Test - Check why images aren't loading
+{% endcomment %}
+
+<script>
+(function() {
+  console.log('🔍 IMAGE DIAGNOSTIC TEST STARTING...');
+  
+  // Wait for page load
+  setTimeout(() => {
+    console.log('\n=== CHECKING PRODUCT CARDS ===');
+    
+    // Find all product cards
+    const cards = document.querySelectorAll('[data-product-id]');
+    console.log(`Found ${cards.length} elements with product IDs`);
+    
+    cards.forEach((element, index) => {
+      const productId = element.getAttribute('data-product-id');
+      const card = element.closest('.product-card') || element;
+      
+      console.log(`\n--- Card ${index + 1}: Product ${productId} ---`);
+      
+      // Find all images in this card
+      const images = card.querySelectorAll('img');
+      console.log(`  Images found: ${images.length}`);
+      
+      images.forEach((img, imgIndex) => {
+        console.log(`  Image ${imgIndex + 1}:`);
+        console.log(`    src: ${img.src}`);
+        console.log(`    srcset: ${img.srcset}`);
+        console.log(`    data-src: ${img.getAttribute('data-src')}`);
+        console.log(`    loading: ${img.loading}`);
+        console.log(`    width: ${img.width}px`);
+        console.log(`    height: ${img.height}px`);
+        console.log(`    display: ${window.getComputedStyle(img).display}`);
+        console.log(`    visibility: ${window.getComputedStyle(img).visibility}`);
+        console.log(`    classes: ${img.className}`);
+      });
+    });
+    
+    // Test loading one of our images
+    console.log('\n=== TESTING IMAGE LOAD ===');
+    const testUrl = 'https://seakundi.com/wp-content/uploads/2025/11/1-21-1.jpg';
+    const testImg = new Image();
+    
+    testImg.onload = () => {
+      console.log(`✅ Test image loaded successfully: ${testUrl}`);
+      console.log(`   Dimensions: ${testImg.width}x${testImg.height}`);
+    };
+    
+    testImg.onerror = () => {
+      console.log(`❌ Test image FAILED to load: ${testUrl}`);
+    };
+    
+    testImg.src = testUrl;
+    
+  }, 3000); // Wait 3 seconds for page to fully load
+})();
+</script>

@@ -4,6 +4,7 @@
   - Fetches all products from server
   - Updates product cards (title, price, images)
   - Works with any Shopify theme structure
+  - Runs multiple times to override lazy loading
 {% endcomment %}
 
 <script>
@@ -42,6 +43,10 @@
         if (Date.now() - timestamp < CACHE_TTL) {
           console.log('📦 Using cached homepage products');
           injectProducts(data);
+          // Re-inject after delays to override lazy loading
+          setTimeout(() => injectProducts(data), 1000);
+          setTimeout(() => injectProducts(data), 2000);
+          setTimeout(() => injectProducts(data), 3000);
           return;
         }
       } catch (e) {}
@@ -68,7 +73,13 @@
           timestamp: Date.now()
         }));
         
+        // Inject immediately
         injectProducts(realProducts);
+        
+        // Re-inject after delays to override lazy loading
+        setTimeout(() => injectProducts(realProducts), 1000);
+        setTimeout(() => injectProducts(realProducts), 2000);
+        setTimeout(() => injectProducts(realProducts), 3000);
       })
       .catch(err => console.error('❌ Failed to load products:', err));
   }
@@ -176,33 +187,46 @@
       });
     }
     
-    // Update images - AGGRESSIVE REPLACEMENT
+    // Update images - NUCLEAR OPTION: Replace the entire image element
     if (data.images && data.images.length > 0) {
       const images = card.querySelectorAll('img');
       let imageCount = 0;
+      
       images.forEach((img, idx) => {
-        const imageUrl = data.images[idx % data.images.length]; // Cycle through available images
+        const imageUrl = data.images[idx % data.images.length];
         if (imageUrl) {
-          // Force replace all image attributes
+          // METHOD 1: Force update existing image
           img.src = imageUrl;
           img.srcset = '';
           img.setAttribute('srcset', '');
           img.sizes = '';
           img.alt = data.title;
-          
-          // Remove lazy loading to show immediately
           img.loading = 'eager';
           img.removeAttribute('data-src');
           img.removeAttribute('data-srcset');
-          
-          // Force display
           img.style.opacity = '1';
           img.style.visibility = 'visible';
           
-          imageCount++;
+          // METHOD 2: Create brand new image and replace
+          const newImg = document.createElement('img');
+          newImg.src = imageUrl;
+          newImg.alt = data.title;
+          newImg.loading = 'eager';
+          newImg.style.width = '100%';
+          newImg.style.height = 'auto';
+          newImg.style.display = 'block';
+          newImg.className = img.className; // Copy classes
+          
+          // Replace the old image with new one
+          if (img.parentNode) {
+            img.parentNode.replaceChild(newImg, img);
+            console.log(`    ✓ REPLACED image ${idx + 1} with: ${imageUrl.substring(0, 50)}...`);
+            imageCount++;
+          }
         }
       });
-      console.log(`    ✓ Updated ${imageCount} images`);
+      
+      console.log(`    ✓ Updated/replaced ${imageCount} images`);
     }
     
     // Update links to use correct handle
