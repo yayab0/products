@@ -1,0 +1,125 @@
+{% comment %}
+  Featured Products Section Override
+  For Shopify sections that display featured products
+  Use this in sections that use {{ section.settings.product }}
+{% endcomment %}
+
+<script>
+(function() {
+  const SERVER_URL = 'https://products-7t0s.onrender.com';
+  
+  // Wait for DOM to be fully loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectFeaturedProducts);
+  } else {
+    injectFeaturedProducts();
+  }
+  
+  function injectFeaturedProducts() {
+    // Find all featured product sections
+    const featuredSections = document.querySelectorAll('[data-testid*="featured-product"]');
+    
+    if (featuredSections.length === 0) {
+      console.log('ℹ️ No featured product sections found');
+      return;
+    }
+    
+    console.log(`🎯 Found ${featuredSections.length} featured product sections`);
+    
+    featuredSections.forEach((section, index) => {
+      // Try to extract product ID from section
+      const productId = extractProductIdFromSection(section);
+      
+      if (productId) {
+        console.log(`Fetching data for featured product ${index + 1}: ${productId}`);
+        
+        fetch(`${SERVER_URL}/proxy/product/${productId}`)
+          .then(res => res.ok ? res.json() : Promise.reject())
+          .then(data => {
+            console.log(`✅ Loaded featured product: ${data.title}`);
+            updateFeaturedSection(section, data);
+          })
+          .catch(err => console.error('❌ Failed to load featured product:', err));
+      }
+    });
+  }
+  
+  function extractProductIdFromSection(section) {
+    // Look for product ID in various places
+    const productIdAttr = section.getAttribute('data-product-id');
+    if (productIdAttr) return productIdAttr;
+    
+    // Look in hidden inputs
+    const hiddenInput = section.querySelector('input[name="id"]');
+    if (hiddenInput) return hiddenInput.value;
+    
+    // Look in form action
+    const form = section.querySelector('form[action*="/cart/add"]');
+    if (form) {
+      const formData = new FormData(form);
+      const id = formData.get('id');
+      if (id) return id;
+    }
+    
+    return null;
+  }
+  
+  function updateFeaturedSection(section, data) {
+    // Update title
+    const titles = section.querySelectorAll('h1, h2, .product-title, [class*="title"]');
+    titles.forEach(title => {
+      if (data.title && title.textContent.trim()) {
+        title.textContent = data.title;
+      }
+    });
+    
+    // Update price
+    const prices = section.querySelectorAll('.price, [class*="price"]');
+    prices.forEach(price => {
+      if (data.price && price.textContent.includes('$') || price.textContent.match(/\d/)) {
+        price.textContent = `$${data.price}`;
+      }
+    });
+    
+    // Update description
+    const descriptions = section.querySelectorAll('.description, [class*="description"]');
+    descriptions.forEach(desc => {
+      if (data.description && desc.textContent.trim()) {
+        desc.innerHTML = formatDescription(data.description);
+      }
+    });
+    
+    // Update images
+    if (data.images && data.images.length > 0) {
+      const images = section.querySelectorAll('img');
+      images.forEach((img, idx) => {
+        if (data.images[idx % data.images.length]) {
+          img.src = data.images[idx % data.images.length];
+          img.srcset = '';
+          img.alt = data.title;
+        }
+      });
+    }
+    
+    console.log(`✅ Updated featured section with: ${data.title}`);
+  }
+  
+  function formatDescription(desc) {
+    const lines = desc.split('\n').filter(l => l.trim());
+    let html = '';
+    
+    lines.forEach(line => {
+      line = line.trim();
+      if (line.match(/^[A-Z][^:]{3,30}:$/)) {
+        html += `<h3>${line}</h3>`;
+      } else if (line.startsWith('•') || line.startsWith('-')) {
+        html += `<li>${line.substring(1).trim()}</li>`;
+      } else {
+        html += `<p>${line}</p>`;
+      }
+    });
+    
+    return html;
+  }
+})();
+</script>

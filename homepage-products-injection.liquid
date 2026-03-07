@@ -1,0 +1,246 @@
+{% comment %}
+  Homepage Featured Products Injection
+  Replaces Shopify product data with server data on homepage/collections
+  - Fetches all products from server
+  - Updates product cards (title, price, images)
+  - Works with any Shopify theme structure
+{% endcomment %}
+
+<script>
+(function() {
+  const SERVER_URL = 'https://products-7t0s.onrender.com';
+  const SHOP_DOMAIN = '{{ shop.domain }}';
+  const CACHE_KEY = 'homepage_products';
+  const CACHE_TTL = 60000; // 60 seconds
+  
+  // Check if we're on a page with product listings
+  const isProductListingPage = 
+    document.querySelector('.product-card, .product-grid, .collection-grid, .product-item') !== null;
+  
+  if (!isProductListingPage) {
+    console.log('ℹ️ Not a product listing page, skipping injection');
+    return;
+  }
+  
+  console.log('🏠 Homepage products injection starting...');
+  
+  // Check cache
+  const cached = sessionStorage.getItem(CACHE_KEY);
+  if (cached) {
+    try {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) {
+        console.log('📦 Using cached homepage products');
+        injectProducts(data);
+        return;
+      }
+    } catch (e) {}
+  }
+  
+  // Fetch all products from server
+  fetch(`${SERVER_URL}/admin/products`)
+    .then(res => res.ok ? res.json() : Promise.reject('Failed'))
+    .then(response => {
+      const products = response.products || response;
+      
+      // Filter out test products
+      const realProducts = products.filter(p => 
+        p.shopify_id !== '123' && 
+        p.title && 
+        p.handle
+      );
+      
+      console.log(`✅ Loaded ${realProducts.length} products from server`);
+      
+      // Cache the data
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: realProducts,
+        timestamp: Date.now()
+      }));
+      
+      injectProducts(realProducts);
+    })
+    .catch(err => console.error('❌ Failed to load products:', err));
+  
+  function injectProducts(serverProducts) {
+    // Create a map of Shopify ID to server product data
+    const productMap = {};
+    serverProducts.forEach(p => {
+      productMap[p.shopify_id] = p;
+    });
+    
+    console.log('Product map:', productMap);
+    
+    // Find all product cards on the page
+    const productCards = findProductCards();
+    console.log(`Found ${productCards.length} product cards on page`);
+    
+    productCards.forEach(card => {
+      const shopifyId = extractShopifyId(card);
+      
+      if (shopifyId && productMap[shopifyId]) {
+        const serverData = productMap[shopifyId];
+        console.log(`💉 Injecting data for: ${serverData.title}`);
+        updateProductCard(card, serverData);
+      }
+    });
+  }
+  
+  function findProductCards() {
+    // Try multiple selectors to find product cards (works with most themes)
+    const selectors = [
+      '.product-card',
+      '.product-item',
+      '.grid-product',
+      '.product-grid-item',
+      '.collection-product',
+      '[data-product-id]',
+      'article.product',
+      '.product'
+    ];
+    
+    let cards = [];
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      if (elements.length > 0) {
+        cards = Array.from(elements);
+        console.log(`Found product cards using selector: ${selector}`);
+        break;
+      }
+    }
+    
+    return cards;
+  }
+  
+  function extractShopifyId(card) {
+    // Try multiple methods to extract Shopify product ID
+    
+    // Method 1: data-product-id attribute
+    const dataId = card.getAttribute('data-product-id') || 
+                   card.getAttribute('data-id') ||
+                   card.getAttribute('data-pid');
+    if (dataId) return dataId;
+    
+    // Method 2: Look for hidden input with product ID
+    const hiddenInput = card.querySelector('input[name="id"], input[name="product_id"]');
+    if (hiddenInput) return hiddenInput.value;
+    
+    // Method 3: Extract from product URL in links
+    const link = card.querySelector('a[href*="/products/"]');
+    if (link) {
+      const href = link.getAttribute('href');
+      const match = href.match(/\/products\/([^?#/]+)/);
+      if (match) {
+        const handle = match[1];
+        // Find product by handle
+        const product = Object.values(productMap).find(p => p.handle === handle);
+        if (product) return product.shopify_id;
+      }
+    }
+    
+    // Method 4: Look in any data attributes
+    for (const attr of card.attributes) {
+      if (attr.name.includes('product') && attr.value.match(/^\d{10,}$/)) {
+        return attr.value;
+      }
+    }
+    
+    return null;
+  }
+  
+  function updateProductCard(card, data) {
+    // Update title
+    const titleSelectors = [
+      '.product-card__title',
+      '.product-title',
+      '.product__title',
+      '.product-item-title',
+      'h3 a',
+      'h2 a',
+      '.title a',
+      'a.product-name'
+    ];
+    
+    for (const selector of titleSelectors) {
+      const titleEl = card.querySelector(selector);
+      if (titleEl && data.title) {
+        titleEl.textContent = data.title;
+        console.log(`  ✓ Updated title: ${data.title.substring(0, 30)}...`);
+        break;
+      }
+    }
+    
+    // Update price
+    const priceSelectors = [
+      '.product-card__price',
+      '.product-price',
+      '.price',
+      '.product-item-price',
+      '[class*="price"]'
+    ];
+    
+    for (const selector of priceSelectors) {
+      const priceEl = card.querySelector(selector);
+      if (priceEl && data.price) {
+        // Find the actual price element (not the compare-at-price)
+        const priceSpan = priceEl.querySelector('.price-item--regular, .price__regular, [class*="regular"]') || priceEl;
+        priceSpan.textContent = `$${data.price}`;
+        console.log(`  ✓ Updated price: $${data.price}`);
+        break;
+      }
+    }
+    
+    // Update main image
+    const imgSelectors = [
+      '.product-card__image img',
+      '.product-item-image img',
+      '.product-image img',
+      '.product__media img',
+      'img.product-img',
+      'img'
+    ];
+    
+    if (data.images && data.images.length > 0) {
+      for (const selector of imgSelectors) {
+        const imgEl = card.querySelector(selector);
+        if (imgEl) {
+          imgEl.src = data.images[0];
+          imgEl.srcset = ''; // Clear srcset to force our image
+          imgEl.alt = data.title;
+          console.log(`  ✓ Updated image`);
+          break;
+        }
+      }
+    }
+    
+    // Update product link to use correct handle
+    if (data.handle) {
+      const links = card.querySelectorAll('a[href*="/products/"]');
+      links.forEach(link => {
+        link.href = `https://${SHOP_DOMAIN}/products/${data.handle}`;
+      });
+    }
+    
+    // Add visual indicator (optional - for debugging)
+    card.style.border = '2px solid #00ff00';
+    card.style.boxShadow = '0 0 10px rgba(0,255,0,0.3)';
+    setTimeout(() => {
+      card.style.border = '';
+      card.style.boxShadow = '';
+    }, 2000);
+  }
+})();
+</script>
+
+<style>
+/* Animation for injected products */
+@keyframes productInjected {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+.product-injected {
+  animation: productInjected 0.5s ease;
+}
+</style>
