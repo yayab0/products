@@ -80,8 +80,27 @@
         try {
           const titleSelectors = ['.product__title','h1.product-title','h1.product-single__title','h1[class*="product"]','h1'];
           const priceSelectors = ['.price','.product__price','.product-single__price','[data-price]','.price-item--sale.price','.price-item__group .price','[data-testid="sticky-price-display"]'];
-          const descSelectors = ['.product__description','.product-single__description','.product-description','[itemprop="description"]'];
-          const imageSelectors = ['.product__media img','.product-single__photo img','.product__image img','picture img','img'];
+          const descSelectors = [
+            '.product__description',
+            '.product-single__description',
+            '.product-description',
+            '[itemprop="description"]',
+            '.rte',
+            '.product__content',
+            '.product__details',
+            '.product-single__description-wrapper',
+            '.description',
+            '.product-desc'
+          ];
+          const imageSelectors = [
+            '.product__media img',
+            '.product-single__photo img',
+            '.product__image img',
+            'picture img',
+            'img[data-media-id]',
+            '.media img',
+            'img'
+          ];
 
           function replaceTitle() {
             for (const sel of titleSelectors) {
@@ -151,7 +170,7 @@
             return false;
           }
 
-          let attempts = 0; const maxAttempts = 20;
+          let attempts = 0; const maxAttempts = 40;
           const interval = setInterval(() => {
             attempts++;
             const t = replaceTitle();
@@ -162,7 +181,7 @@
               clearInterval(interval);
               console.log('🔁 Replacement attempts:', attempts, 'done');
             }
-          }, 200);
+          }, 300);
 
         } catch (err) { console.warn('⚠️ Visible replacement failed', err); }
 
