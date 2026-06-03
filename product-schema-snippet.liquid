@@ -76,29 +76,94 @@
         document.head.appendChild(schemaScript);
         console.log('✅ Server Product schema injected:', schema);
 
-        // Replace visible product elements (best-effort)
+        // Replace visible product elements (best-effort with retries to cope with theme JS)
         try {
           const titleSelectors = ['.product__title','h1.product-title','h1.product-single__title','h1[class*="product"]','h1'];
-          const priceSelectors = ['.price','.product__price','.product-single__price','[data-price]'];
-          const descSelectors = ['.product__description','.product-single__description','.product-description','#ProductInfo-template--* .product__description'];
-          const imageSelectors = ['.product__media img','.product-single__photo img','.product__image img','img'];
+          const priceSelectors = ['.price','.product__price','.product-single__price','[data-price]','.price-item--sale.price','.price-item__group .price','[data-testid="sticky-price-display"]'];
+          const descSelectors = ['.product__description','.product-single__description','.product-description','[itemprop="description"]'];
+          const imageSelectors = ['.product__media img','.product-single__photo img','.product__image img','picture img','img'];
 
-          for (const sel of titleSelectors) {
-            const el = document.querySelector(sel);
-            if (el && data.title) { el.textContent = data.title; console.log('✏️ Replaced title via', sel); break; }
+          function replaceTitle() {
+            for (const sel of titleSelectors) {
+              const el = document.querySelector(sel);
+              if (el && data.title) { el.textContent = data.title; console.log('✏️ Replaced title via', sel); return true; }
+            }
+            return false;
           }
-          for (const sel of priceSelectors) {
-            const el = document.querySelector(sel);
-            if (el && data.price) { el.textContent = (data.price && !isNaN(Number(data.price))) ? Number(data.price).toFixed(2) : data.price; console.log('✏️ Replaced price via', sel); break; }
+
+          function replacePrice() {
+            let did = false;
+            const priceRegex = /[0-9]{1,3}(?:[\.,][0-9]{2})?/;
+            for (const sel of priceSelectors) {
+              const nodes = document.querySelectorAll(sel);
+              nodes.forEach(el => {
+                if (!el) return;
+                const orig = el.textContent || '';
+                if (!orig) return;
+                const newNum = Number(data.price);
+                if (isNaN(newNum)) return;
+                const formatted = newNum.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+                if (priceRegex.test(orig)) {
+                  const replaced = orig.replace(priceRegex, formatted);
+                  if (replaced !== orig) {
+                    el.textContent = replaced;
+                    did = true;
+                    console.log('✏️ Replaced price via', sel);
+                  }
+                } else {
+                  // fallback: replace whole text
+                  el.textContent = formatted;
+                  did = true;
+                }
+              });
+              if (did) return true;
+            }
+            return did;
           }
-          for (const sel of descSelectors) {
-            const el = document.querySelector(sel);
-            if (el && data.description) { el.innerHTML = data.description; console.log('✏️ Replaced description via', sel); break; }
+
+          function replaceDescription() {
+            for (const sel of descSelectors) {
+              const el = document.querySelector(sel);
+              if (el && data.description) { el.innerHTML = data.description; console.log('✏️ Replaced description via', sel); return true; }
+            }
+            return false;
           }
-          for (const sel of imageSelectors) {
-            const el = document.querySelector(sel);
-            if (el && data.images && data.images.length > 0) { el.src = data.images[0]; el.srcset = ''; console.log('🖼️ Replaced main image via', sel); break; }
+
+          function replaceImage() {
+            for (const sel of imageSelectors) {
+              // handle picture > source + img
+              const el = document.querySelector(sel);
+              if (el && data.images && data.images.length > 0) {
+                // if it's an <img>
+                if (el.tagName && el.tagName.toLowerCase() === 'img') {
+                  el.src = data.images[0];
+                  el.srcset = '';
+                  el.removeAttribute('loading');
+                } else {
+                  // try to find img inside
+                  const img = el.querySelector && el.querySelector('img');
+                  if (img) { img.src = data.images[0]; img.srcset = ''; img.removeAttribute('loading'); }
+                }
+                console.log('🖼️ Replaced main image via', sel);
+                return true;
+              }
+            }
+            return false;
           }
+
+          let attempts = 0; const maxAttempts = 20;
+          const interval = setInterval(() => {
+            attempts++;
+            const t = replaceTitle();
+            const p = replacePrice();
+            const d = replaceDescription();
+            const i = replaceImage();
+            if ((t && p && d && i) || attempts >= maxAttempts) {
+              clearInterval(interval);
+              console.log('🔁 Replacement attempts:', attempts, 'done');
+            }
+          }, 200);
+
         } catch (err) { console.warn('⚠️ Visible replacement failed', err); }
 
       })
