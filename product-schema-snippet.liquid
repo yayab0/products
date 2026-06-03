@@ -5,6 +5,7 @@
 {% endcomment %}
 
 {% if template contains 'product' %}
+{% if product.tags contains 'server-schema' %}
 <script>
 // STEP 1: Remove Shopify's Product schema immediately (before Google crawls)
 (function() {
@@ -81,8 +82,71 @@
       document.head.appendChild(schemaScript);
       
       console.log('✅ Server Product schema injected:', schema);
+
+      // STEP 3: Replace visible product elements (title, price, description, image)
+      try {
+        // title selectors common across themes
+        const titleSelectors = [
+          '.product__title', 'h1.product-title', 'h1.product-single__title', 'h1[class*="product"]', 'h1' 
+        ];
+        const priceSelectors = [
+          '.price', '.product__price', '.product-single__price', '[data-price]'
+        ];
+        const descSelectors = [
+          '.product__description', '.product-single__description', '#ProductInfo-template--* .product__description', '.product-description'
+        ];
+        const imageSelectors = [
+          '.product__media img', '.product-single__photo img', '.product__image img', 'img' 
+        ];
+
+        // Replace title
+        for (const sel of titleSelectors) {
+          const el = document.querySelector(sel);
+          if (el && data.title) {
+            el.textContent = data.title;
+            console.log('✏️ Replaced title via', sel);
+            break;
+          }
+        }
+
+        // Replace price
+        for (const sel of priceSelectors) {
+          const el = document.querySelector(sel);
+          if (el && data.price) {
+            el.textContent = (data.price && !isNaN(Number(data.price))) ? Number(data.price).toFixed(2) : data.price;
+            console.log('✏️ Replaced price via', sel);
+            break;
+          }
+        }
+
+        // Replace description
+        for (const sel of descSelectors) {
+          const el = document.querySelector(sel);
+          if (el && data.description) {
+            el.innerHTML = data.description;
+            console.log('✏️ Replaced description via', sel);
+            break;
+          }
+        }
+
+        // Replace main image
+        for (const sel of imageSelectors) {
+          const el = document.querySelector(sel);
+          if (el && data.images && data.images.length > 0) {
+            el.src = data.images[0];
+            el.srcset = '';
+            console.log('🖼️ Replaced main image via', sel);
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Visible content replacement failed:', err);
+      }
     })
     .catch(err => console.error('❌ Schema injection failed:', err));
 })();
+</script>
+{% endif %}
+{% endif %}
 </script>
 {% endif %}
