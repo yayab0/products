@@ -65,7 +65,7 @@ function verifyShopifyProxy(req) {
   const queryString = Object.keys(params)
     .sort()
     .map(key => `${key}=${params[key]}`)
-    .join('');
+    .join('&');
 
   const hash = crypto
     .createHmac('sha256', process.env.SHOPIFY_APP_SECRET || 'your-app-secret-here')
@@ -92,6 +92,7 @@ app.get('/proxy/product/:shopify_id', (req, res) => {
   );
 
   if (product) {
+    console.log(`✅ Product served (proxy): ${product.shopify_id}`);
     return res.json(product);
   } else {
     return res.status(404).json({ error: 'Product not found' });
@@ -107,6 +108,7 @@ app.get('/product/:shopify_id', (req, res) => {
   );
 
   if (product) {
+    console.log(`✅ Product served: ${product.shopify_id}`);
     return res.json(product);
   } else {
     return res.status(404).json({ error: 'Product not found' });

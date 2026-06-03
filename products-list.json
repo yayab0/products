@@ -1,0 +1,1 @@
+{"products":[{"id":"123","shopify_id":"123","title":"Premium Product","description":"High-quality product with exclusive features","price":"99.99","category":"General","images":["https://via.placeholder.com/800"],"variants":[{"id":"v1","title":"Small","price":"99.99","available":true},{"id":"v2","title":"Large","price":"129.99","available":true}]}]}
